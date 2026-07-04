@@ -88,11 +88,13 @@ export const render = ({ output }) => {
   }
 
   if (!data || !data.ok) {
-    const msg = data && data.error === "no-credential"
-      ? "no Claude Code login found"
-      : data && data.error
-      ? `error: ${data.error}`
-      : "loading…";
+    const code = data && data.error;
+    let msg;
+    if (code === "no-credential") msg = "no Claude Code login — run `claude`";
+    else if (code === "expired" || code === "http-401" || code === "http-403") msg = "session expired — run `claude` to refresh";
+    else if (code === "http-429") msg = "rate limited — retrying shortly";
+    else if (code) msg = `error: ${code}`;
+    else msg = "loading…";
     return (
       <div style={card}>
         <Header />
@@ -106,7 +108,7 @@ export const render = ({ output }) => {
       <Header stale={data.stale} />
       <Bar label="Session" row={data.session} />
       <Bar label="Weekly" row={data.weekly} />
-      <Bar label={data.fable_label || "Fable"} row={data.fable} />
+      {data.fable && <Bar label={data.fable_label || "Fable"} row={data.fable} />}
     </div>
   );
 };

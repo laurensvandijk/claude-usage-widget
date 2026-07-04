@@ -5,7 +5,8 @@ and **Fable** — right on your desktop, mirroring the `claude /usage` screen. R
 [Übersicht](https://tracesof.net/uebersicht/).
 
 No claude.ai cookie, no third-party server, no telemetry. It reuses the login you already have from
-the `claude` CLI and talks only to Anthropic's own hosts.
+the `claude` CLI and talks only to Anthropic's own hosts. **Read-only by default** — it never writes
+to your Keychain (see [Token refresh](#token-refresh)).
 
 <img src="docs/widget.png" alt="Claude usage widget showing session, weekly, and Fable limits" width="420">
 
@@ -16,7 +17,7 @@ the `claude` CLI and talks only to Anthropic's own hosts.
 - macOS
 - [Übersicht](https://tracesof.net/uebersicht/) — `brew install --cask ubersicht`
 - [Claude Code](https://claude.com/claude-code) installed and **logged in** (run `claude` once and sign in)
-- `python3` (ships with macOS / the Command Line Tools)
+- `python3` — comes with the Xcode Command Line Tools; if `python3 --version` fails, run `xcode-select --install`
 
 ## Install
 
@@ -43,13 +44,29 @@ open -a "Übersicht"
 ## How it works
 
 - `claude-usage.py` reads the Claude Code OAuth token from the macOS login Keychain
-  (`Claude Code-credentials`), refreshes the access token if it has expired, then calls
-  `https://api.anthropic.com/api/oauth/usage` — the same endpoint the `/usage` command uses.
-  It parses the `limits[]` array and prints session / weekly / Fable percentages as JSON.
-- `claude-usage.jsx` is the Übersicht widget: it runs the script every 60s and renders three bars.
+  (`Claude Code-credentials`) and calls `https://api.anthropic.com/api/oauth/usage` — the same
+  endpoint the `/usage` command uses. It parses the `limits[]` array and prints session / weekly /
+  Fable percentages as JSON. Results are cached, so a transient error (e.g. a rate limit) shows the
+  last good reading marked `· stale` instead of blanking the widget.
+- `claude-usage.jsx` is the Übersicht widget: it runs the script every 5 minutes and renders the bars.
 
 The account is auto-detected (the token lives under your macOS username on most machines), so nothing
 is hardcoded to one user.
+
+## Token refresh
+
+By default the widget is **read-only**: it never writes to your Keychain. It uses the access token as
+long as it's valid, and Claude Code refreshes that token every time you run `claude`. If the token is
+expired and you haven't run `claude` recently, the widget shows the last reading (`· stale`) or
+`session expired — run claude`.
+
+If you want the widget to refresh the token itself when it expires (which **writes** the rotated token
+back to the Keychain, exactly as the CLI does), opt in either way:
+
+```sh
+touch ~/claude-usage-widget/refresh.enabled   # marker file next to the script
+# or set CLAUDE_USAGE_WIDGET_REFRESH=1 in the environment Übersicht sees
+```
 
 ## Tweak
 

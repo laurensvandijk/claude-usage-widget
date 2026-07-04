@@ -1,6 +1,7 @@
 .backup/
 .DS_Store
 *.png
+refresh.enabled
 
 # allow the README screenshot
 !docs/widget.png

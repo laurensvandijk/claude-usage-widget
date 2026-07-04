@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Fetch Claude Code usage limits (session / weekly / Fable) for the Übersicht widget.
 
-Reads the Claude Code OAuth credential from the macOS login Keychain, refreshes the
-access token if it has expired, calls the same endpoint the `claude /usage` command uses,
-and prints a compact JSON blob to stdout for the widget to render.
+Reads the Claude Code OAuth credential from the macOS login Keychain, calls the same
+endpoint the `claude /usage` command uses, and prints a compact JSON blob to stdout.
+
+Read-only by default: it never writes to the Keychain. When the access token is expired
+it shows stale/expired state until you next run `claude` (which refreshes the token).
+Opt in to having the widget refresh the token itself — which writes the rotated token
+back to the Keychain — by setting env `CLAUDE_USAGE_WIDGET_REFRESH=1` or creating a file
+named `refresh.enabled` next to this script.
 
 No claude.ai cookie, no third-party server. Talks only to api.anthropic.com and
 platform.claude.com (the official Claude Code OAuth endpoints).
@@ -21,12 +26,25 @@ import urllib.error
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 CACHE_PATH = os.path.join(tempfile.gettempdir(), "claude-usage-widget.json")
-CACHE_MAX_AGE = 6 * 3600  # keep showing last-good data up to 6h through transient errors
+CACHE_MAX_AGE = 3 * 3600  # bridge transient errors, but under the 5h session window so we don't show data from before a reset
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code public OAuth client
 OAUTH_BETA = "oauth-2025-04-20"
 USER_AGENT = "claude-cli/2.1.201 (external, cli)"  # required: platform.claude.com blocks bare urllib
-REFRESH_BUFFER_MS = 120_000  # refresh if within 2 min of expiry
+REFRESH_BUFFER_MS = 120_000  # treat as expired if within 2 min of expiry
+
+# Read-only by default. Opt in to self-refresh (which writes the rotated token back to the
+# Keychain) via env var or a marker file next to this script. The file toggle is handy because
+# Übersicht launches from the GUI, where exporting an env var is awkward.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REFRESH_ENABLED = (
+    os.environ.get("CLAUDE_USAGE_WIDGET_REFRESH") == "1"
+    or os.path.exists(os.path.join(_SCRIPT_DIR, "refresh.enabled"))
+)
+
+
+class TokenExpired(Exception):
+    """Access token is expired and self-refresh is disabled (read-only mode)."""
 
 
 def _read_account(account):
@@ -129,7 +147,9 @@ def ensure_token(account, blob):
     exp = node.get("expiresAt", 0)
     if exp and exp - now_ms > REFRESH_BUFFER_MS:
         return node["accessToken"]
-    return refresh_token(account, blob)
+    if REFRESH_ENABLED:
+        return refresh_token(account, blob)
+    raise TokenExpired()
 
 
 def fetch_usage(access_token):
@@ -165,11 +185,11 @@ def parse(usage):
         model = scope.get("model") or {}
         return model.get("display_name")
 
-    fable = pick(limits, lambda l: l.get("kind") == "weekly_scoped"
-                 and scoped_model_name(l) == "Fable")
+    fable = pick(limits, lambda lim: lim.get("kind") == "weekly_scoped"
+                 and scoped_model_name(lim) == "Fable")
     return {
-        "session": pick(limits, lambda l: l.get("kind") == "session"),
-        "weekly": pick(limits, lambda l: l.get("kind") == "weekly_all"),
+        "session": pick(limits, lambda lim: lim.get("kind") == "session"),
+        "weekly": pick(limits, lambda lim: lim.get("kind") == "weekly_all"),
         "fable": fable,
         "fable_label": "Fable" if fable else None,
     }
@@ -192,6 +212,8 @@ def read_cache():
 
 
 def error_label(exc):
+    if isinstance(exc, TokenExpired):
+        return "expired"
     if isinstance(exc, subprocess.CalledProcessError):
         return "no-credential"
     if isinstance(exc, urllib.error.HTTPError):
@@ -216,8 +238,6 @@ def main():
             out = dict(cached)
             out["stale"] = True
             out["error"] = err
-        elif err == "no-credential":
-            out = {"ok": False, "error": "no-credential"}
         else:
             out = {"ok": False, "error": err}
     print(json.dumps(out))
