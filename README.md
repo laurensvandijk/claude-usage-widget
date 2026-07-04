@@ -83,6 +83,14 @@ Edit `claude-usage.jsx`:
 - **`no Claude Code login found`** — no `Claude Code-credentials` entry in your Keychain yet; log in with `claude`.
 - **Widget doesn't appear** — make sure Übersicht is running and has Screen Recording permission if macOS asks.
 
+## Tests
+
+Pure-logic unit tests (parsing, limit selection, error mapping, cache, version detection):
+
+```sh
+python3 test_claude_usage.py
+```
+
 ## Uninstall
 
 ```sh
