@@ -1,0 +1,6 @@
+.backup/
+.DS_Store
+*.png
+
+# allow the README screenshot
+!docs/widget.png
