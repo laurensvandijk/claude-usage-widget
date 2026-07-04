@@ -30,8 +30,26 @@ CACHE_MAX_AGE = 3 * 3600  # bridge transient errors, but under the 5h session wi
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code public OAuth client
 OAUTH_BETA = "oauth-2025-04-20"
-USER_AGENT = "claude-cli/2.1.201 (external, cli)"  # required: platform.claude.com blocks bare urllib
 REFRESH_BUFFER_MS = 120_000  # treat as expired if within 2 min of expiry
+
+
+def _cli_version():
+    """Best-effort read of the installed Claude Code version (native-installer layout)."""
+    base = os.path.expanduser("~/.local/share/claude/versions")
+    try:
+        vers = [d for d in os.listdir(base) if d[:1].isdigit()]
+    except OSError:
+        return None
+    if not vers:
+        return None
+    return sorted(vers, key=lambda s: [int(x) for x in s.split(".") if x.isdigit()])[-1]
+
+
+# A named User-Agent is required — platform.claude.com's Cloudflare blocks the default urllib UA.
+# We track the installed CLI version when we can find it (so it never goes stale), else fall back
+# to a version-less claude-cli string.
+_CLI_VERSION = _cli_version()
+USER_AGENT = f"claude-cli/{_CLI_VERSION} (external, cli)" if _CLI_VERSION else "claude-cli (external, cli)"
 
 # Read-only by default. Opt in to self-refresh (which writes the rotated token back to the
 # Keychain) via env var or a marker file next to this script. The file toggle is handy because
