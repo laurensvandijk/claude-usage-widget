@@ -2,7 +2,7 @@
 // Shows session / weekly / Fable limits, mirroring the `claude /usage` screen.
 // Data comes from claude-usage.py (reads the Claude Code OAuth token from Keychain).
 
-export const refreshFrequency = 60000; // 1 min
+export const refreshFrequency = 300000; // 5 min — usage changes slowly; avoids rate limits
 
 // Übersicht runs `command` with the widgets directory as the working directory.
 // install.sh links this folder in as "claude-usage", so this path is portable across machines.
@@ -103,7 +103,7 @@ export const render = ({ output }) => {
 
   return (
     <div style={card}>
-      <Header />
+      <Header stale={data.stale} />
       <Bar label="Session" row={data.session} />
       <Bar label="Weekly" row={data.weekly} />
       <Bar label={data.fable_label || "Fable"} row={data.fable} />
@@ -111,13 +111,14 @@ export const render = ({ output }) => {
   );
 };
 
-function Header() {
+function Header({ stale } = {}) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
-      <div style={{ width: 8, height: 8, borderRadius: 2, background: "#d97757" }} />
+      <div style={{ width: 8, height: 8, borderRadius: 2,
+                    background: stale ? "#8f8a82" : "#d97757" }} />
       <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase",
                      color: "#a8a29e", fontWeight: 600 }}>
-        Claude usage
+        Claude usage{stale ? " · stale" : ""}
       </span>
     </div>
   );

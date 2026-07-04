@@ -11,13 +11,17 @@ platform.claude.com (the official Claude Code OAuth endpoints).
 
 import getpass
 import json
+import os
 import subprocess
+import tempfile
 import time
 import urllib.request
 import urllib.error
 
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+CACHE_PATH = os.path.join(tempfile.gettempdir(), "claude-usage-widget.json")
+CACHE_MAX_AGE = 6 * 3600  # keep showing last-good data up to 6h through transient errors
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code public OAuth client
 OAUTH_BETA = "oauth-2025-04-20"
@@ -171,6 +175,30 @@ def parse(usage):
     }
 
 
+def write_cache(data):
+    try:
+        with open(CACHE_PATH, "w") as f:
+            json.dump(data, f)
+    except OSError:
+        pass
+
+
+def read_cache():
+    try:
+        with open(CACHE_PATH) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def error_label(exc):
+    if isinstance(exc, subprocess.CalledProcessError):
+        return "no-credential"
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"http-{exc.code}"
+    return str(exc)[:120]
+
+
 def main():
     try:
         account, blob = read_keychain()
@@ -178,12 +206,20 @@ def main():
         usage = fetch_usage(token)
         out = {"ok": True, "fetched_at": int(time.time())}
         out.update(parse(usage))
-    except subprocess.CalledProcessError:
-        out = {"ok": False, "error": "no-credential"}
-    except urllib.error.HTTPError as e:
-        out = {"ok": False, "error": f"http-{e.code}"}
-    except Exception as e:  # noqa: BLE001 - surface anything to the widget
-        out = {"ok": False, "error": str(e)[:120]}
+        write_cache(out)
+    except Exception as exc:  # noqa: BLE001 - surface anything to the widget
+        err = error_label(exc)
+        cached = read_cache()
+        # A transient failure (e.g. rate-limit 429) shouldn't blank the widget:
+        # fall back to the last good reading while it's still reasonably fresh.
+        if cached and cached.get("ok") and time.time() - cached.get("fetched_at", 0) < CACHE_MAX_AGE:
+            out = dict(cached)
+            out["stale"] = True
+            out["error"] = err
+        elif err == "no-credential":
+            out = {"ok": False, "error": "no-credential"}
+        else:
+            out = {"ok": False, "error": err}
     print(json.dumps(out))
 
 
