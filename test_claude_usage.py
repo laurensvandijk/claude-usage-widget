@@ -130,5 +130,34 @@ class TestCliVersion(unittest.TestCase):
             self.assertIsNone(cu._cli_version())
 
 
+
+class TestOpenHttps(unittest.TestCase):
+    def test_refuses_file_scheme(self):
+        with mock.patch.object(cu.urllib.request, "urlopen") as op:
+            with self.assertRaises(ValueError):
+                cu._open_https(cu.urllib.request.Request("file:///etc/passwd"))
+            op.assert_not_called()
+
+    def test_refuses_other_host_and_plain_http(self):
+        with mock.patch.object(cu.urllib.request, "urlopen") as op:
+            for url in ("https://example.com/x", "http://api.anthropic.com/api/oauth/usage"):
+                with self.assertRaises(ValueError):
+                    cu._open_https(cu.urllib.request.Request(url))
+            op.assert_not_called()
+
+    def test_allows_fixed_endpoints(self):
+        with mock.patch.object(cu.urllib.request, "urlopen", return_value="resp") as op:
+            for url in (cu.USAGE_URL, cu.TOKEN_URL):
+                self.assertEqual(cu._open_https(cu.urllib.request.Request(url)), "resp")
+            self.assertEqual(op.call_count, 2)
+
+    def test_fetch_usage_goes_through_allowlist(self):
+        resp = mock.MagicMock()
+        resp.__enter__.return_value = io.BytesIO(b'{"limits": []}')
+        with mock.patch.object(cu.urllib.request, "urlopen", return_value=resp) as op:
+            self.assertEqual(cu.fetch_usage("tok"), {"limits": []})
+            self.assertEqual(op.call_args[0][0].full_url, cu.USAGE_URL)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

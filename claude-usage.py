@@ -20,6 +20,7 @@ import os
 import subprocess
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 
@@ -31,6 +32,16 @@ TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"  # Claude Code public OAuth client
 OAUTH_BETA = "oauth-2025-04-20"
 REFRESH_BUFFER_MS = 120_000  # treat as expired if within 2 min of expiry
+_ALLOWED_HOSTS = {urllib.parse.urlsplit(u).hostname for u in (USAGE_URL, TOKEN_URL)}
+
+
+def _open_https(req, timeout=25):
+    """urlopen limited to https and the two fixed endpoints above (never file:// or another host)."""
+    parts = urllib.parse.urlsplit(req.full_url)
+    if parts.scheme != "https" or parts.hostname not in _ALLOWED_HOSTS:
+        raise ValueError(f"refusing URL outside the allowlist: {parts.scheme}://{parts.hostname}")
+    # Scheme and host were checked against the fixed allowlist just above.
+    return urllib.request.urlopen(req, timeout=timeout)  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
 
 
 def _cli_version():
@@ -148,7 +159,7 @@ def refresh_token(account, blob):
         headers={"Content-Type": "application/json", "Accept": "application/json",
                  "User-Agent": USER_AGENT},
     )
-    with urllib.request.urlopen(req, timeout=25) as r:
+    with _open_https(req) as r:
         data = json.load(r)
     node["accessToken"] = data["access_token"]
     if data.get("refresh_token"):
@@ -180,7 +191,7 @@ def fetch_usage(access_token):
             "User-Agent": USER_AGENT,
         },
     )
-    with urllib.request.urlopen(req, timeout=25) as r:
+    with _open_https(req) as r:
         return json.load(r)
 
 
